@@ -9,14 +9,14 @@ MANIFEST="beacon-distro/manifest.yaml"
 echo "Syncing OTel Collector versions from truthbeam to manifest..."
 
 # Extract OTel Collector version from truthbeam (using processorhelper as reference)
-OTEL_VERSION=$(grep 'go.opentelemetry.io/collector/processor/processorhelper' "$TRUTHBEAM_GOMOD" | grep -oP 'v\d+\.\d+\.\d+' | head -1)
+OTEL_VERSION=$(grep 'go.opentelemetry.io/collector/processor/processorhelper' "$TRUTHBEAM_GOMOD" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
 if [ -z "$OTEL_VERSION" ]; then
     echo "ERROR: Could not extract OTel Collector version from $TRUTHBEAM_GOMOD"
     exit 1
 fi
 
 # Extract provider version (different version scheme)
-PROVIDER_VERSION=$(grep 'go.opentelemetry.io/collector/component v' "$TRUTHBEAM_GOMOD" | grep -oP 'v\d+\.\d+\.\d+' | head -1)
+PROVIDER_VERSION=$(grep 'go.opentelemetry.io/collector/component v' "$TRUTHBEAM_GOMOD" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
 if [ -z "$PROVIDER_VERSION" ]; then
     echo "ERROR: Could not extract provider version from $TRUTHBEAM_GOMOD"
     exit 1

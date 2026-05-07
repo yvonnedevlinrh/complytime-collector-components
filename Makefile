@@ -31,18 +31,18 @@ all: test
 # ------------------------------------------------------------------------------
 # Test Target
 # ------------------------------------------------------------------------------
-test: ## Runs unit tests with coverage for every module in the monorepo.
+test: check-go-version check-go-mod-consistency check-otel-versions ## Runs unit tests with coverage and version checks for every module
 	@for m in $(MODULES); do \
 		echo "========================================================================================================="; \
 		echo "Running tests for $$m..."; \
 		echo "========================================================================================================="; \
-		(cd $$m && go test -v -coverprofile=coverage.out -covermode=atomic ./...); \
+		(cd $$m && GOWORK=off go test -v -coverprofile=coverage.out -covermode=atomic ./...); \
 		if [ $$? -ne 0 ]; then \
 			echo "Tests failed for module: $$m"; \
 			exit 1; \
 		fi; \
 		echo "Coverage summary for $$m:"; \
-		(cd $$m && go tool cover -func=coverage.out | tail -n1) || true; \
+		(cd $$m && GOWORK=off go tool cover -func=coverage.out | tail -n1) || true; \
 		echo "-------------------"; \
 	done
 	@echo "--- All tests passed! ---"
@@ -51,7 +51,7 @@ test: ## Runs unit tests with coverage for every module in the monorepo.
 test-race: ## Runs tests with race detection
 	@for m in $(MODULES); do \
 		echo "Running tests with race detection for $$m..."; \
-		(cd $$m && go test -v -race ./...); \
+		(cd $$m && GOWORK=off go test -v -race ./...); \
 		if [ $$? -ne 0 ]; then \
 			echo "Tests failed for module: $$m"; \
 			exit 1; \
@@ -63,7 +63,7 @@ test-race: ## Runs tests with race detection
 # ------------------------------------------------------------------------------
 # Dependencies for all modules
 # ------------------------------------------------------------------------------
-deps: ## Tidy, verify, and download deps for all modules (workspace-aware)
+deps: workspace ## Tidy, verify, and download deps for all modules (workspace-aware)
 	@echo "Syncing workspace..."
 	@go work sync
 	@for m in $(MODULES); do \
@@ -81,9 +81,9 @@ deps: ## Tidy, verify, and download deps for all modules (workspace-aware)
 coverage-report: test ## Generate HTML coverage report and show summary
 	@for m in $(MODULES); do \
 		echo "Generating coverage report for $$m..."; \
-		(cd $$m && go tool cover -html=coverage.out -o coverage.html); \
+		(cd $$m && GOWORK=off go tool cover -html=coverage.out -o coverage.html); \
 		echo "Coverage summary for $$m:"; \
-		(cd $$m && go tool cover -func=coverage.out | tail -n1) || true; \
+		(cd $$m && GOWORK=off go tool cover -func=coverage.out | tail -n1) || true; \
 		echo "-------------------"; \
 	done
 	@echo "--- Coverage reports generated! ---"
@@ -98,7 +98,7 @@ clean: ## Removes all generated binaries and Go build caches.
 .PHONY: clean
 
 workspace: # Setup a go workspace with all modules
-		@go work init && go work use $(MODULES)
+		@test -f go.work || go work init && go work use $(MODULES)
 .PHONY: workspace
 
 #------------------------------------------------------------------------------
@@ -212,47 +212,24 @@ golangci-lint: ## Runs golangci-lint for all modules
 CONTAINERFILE := beacon-distro/Containerfile.collector
 
 check-go-version: ## Check that Containerfile Go version satisfies all module requirements
-	@CF_VERSION=$$(sed -n 's/^FROM golang:\([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' $(CONTAINERFILE) | head -1); \
-	if [ -z "$$CF_VERSION" ]; then \
-		echo "ERROR: Could not extract Go version from $(CONTAINERFILE)"; \
-		exit 1; \
-	fi; \
-	CF_MAJOR=$$(echo "$$CF_VERSION" | cut -d. -f1); \
-	CF_MINOR=$$(echo "$$CF_VERSION" | cut -d. -f2); \
-	echo "Containerfile Go version: $$CF_VERSION (major=$$CF_MAJOR minor=$$CF_MINOR)"; \
-	FAILED=0; \
-	for m in $(MODULES); do \
-		MOD_VERSION=$$(sed -n 's/^go \([0-9]*\.[0-9]*\).*/\1/p' $$m/go.mod | head -1); \
-		if [ -z "$$MOD_VERSION" ]; then \
-			echo "WARNING: Could not extract go directive from $$m/go.mod"; \
-			continue; \
-		fi; \
-		MOD_MAJOR=$$(echo "$$MOD_VERSION" | cut -d. -f1); \
-		MOD_MINOR=$$(echo "$$MOD_VERSION" | cut -d. -f2); \
-		if [ "$$CF_MAJOR" -lt "$$MOD_MAJOR" ] || \
-		   { [ "$$CF_MAJOR" -eq "$$MOD_MAJOR" ] && [ "$$CF_MINOR" -lt "$$MOD_MINOR" ]; }; then \
-			echo "FAIL: $$m/go.mod requires go $$MOD_VERSION but $(CONTAINERFILE) uses $$CF_VERSION"; \
-			FAILED=1; \
-		else \
-			echo "OK: $$m/go.mod requires go $$MOD_VERSION <= $$CF_VERSION"; \
-		fi; \
-	done; \
-	if [ "$$FAILED" -ne 0 ]; then \
-		echo ""; \
-		echo "ERROR: Containerfile Go version is behind module requirements."; \
-		echo "Update the FROM golang:X.Y.Z line in $(CONTAINERFILE)."; \
-		exit 1; \
-	fi; \
-	echo "--- Go version check passed ---"
+	@bash scripts/check-go-version.sh
 .PHONY: check-go-version
 
 check-otel-versions: ## Check that manifest.yaml OTel versions align with truthbeam
 	@bash scripts/check-otel-versions.sh
 .PHONY: check-otel-versions
 
+check-go-mod-consistency: ## Check that OTel dependencies within each go.mod are consistent
+	@bash scripts/check-go-mod-consistency.sh
+.PHONY: check-go-mod-consistency
+
 sync-otel-versions: ## Sync manifest.yaml OTel versions from truthbeam (idiomatic Go way)
 	@bash scripts/sync-manifest-versions.sh
 .PHONY: sync-otel-versions
+
+sync-all-otel-versions: ## Sync all OTel versions to highest found across all modules
+	@bash scripts/sync-all-otel-versions.sh
+.PHONY: sync-all-otel-versions
 
 #------------------------------------------------------------------------------
 # CRAP Load Monitoring
