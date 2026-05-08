@@ -79,7 +79,7 @@ deps: workspace ## Tidy, verify, and download deps for all modules (workspace-aw
 .PHONY: deps
 
 coverage-report: test ## Generate HTML coverage report and show summary
-	@for m in $(MODULES); do \
+		@test -f go.work || go work init; go work use $(MODULES)
 		echo "Generating coverage report for $$m..."; \
 		(cd $$m && GOWORK=off go tool cover -html=coverage.out -o coverage.html); \
 		echo "Coverage summary for $$m:"; \
