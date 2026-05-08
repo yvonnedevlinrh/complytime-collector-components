@@ -171,9 +171,9 @@ Releases are created as needed. Maintainers coordinate releases via issues or di
 
 ### 1. Create Caller Workflows
 
-- Create a workflow for publishing to GHCR as [`ci_publish_ghcr.yml`](../.github/workflows/ci_publish_ghcr.yml) 
+- Create a workflow for publishing to GHCR as [`ci_publish_ghcr.yml`](../.github/workflows/ci_publish_ghcr.yml)
 - Create a workflow for publishing to Quay as [`ci_publish_quay.yml`](../.github/workflows/ci_publish_quay.yml)
-- Get the commit SHA from the successful run of ci_publish_ghcr.yml 
+- Get the commit SHA from the successful run of ci_publish_ghcr.yml
 - Then tag the built commit and push trigger the Quay
 
 ### 2. Configure Secrets
@@ -208,8 +208,6 @@ cosign verify quay.io/continuouscompliance/complytime-beacon-distro \
   --certificate-identity-regexp='https://github.com/complytime/.*' \
   --certificate-oidc-issuer=https://token.actions.githubusercontent.com
 
-# Note: The Compass image is published from a separate repository:
-# ghcr.io/complytime/gemara-content-service
 ```
 
 ## Quick Reference

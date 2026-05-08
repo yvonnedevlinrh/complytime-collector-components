@@ -1,0 +1,30 @@
+version: '3'
+
+vars:
+  CERT_DIR: '{{.CERT_DIR | default (printf "%s/hack/self-signed-cert" .ROOT_DIR)}}'
+  OPENSSL_CNF: '{{.CERT_DIR}}/openssl.cnf'
+  IMAGE: '{{.IMAGE | default "complybeacon/collector"}}'
+  TAG: '{{.TAG | default "latest"}}'
+
+tasks:
+  default:
+    silent: true
+    cmd: task infra --list
+
+  build:
+    desc: Build the beacon collector container image
+    cmds:
+      - task: :dev:deps
+      - task: :version:sync-otel-versions
+      - podman build -f Containerfile.collector -t {{.IMAGE}}:{{.TAG}} {{.ROOT_DIR}}/beacon-distro
+
+  deploy:
+    desc: Deploy infra (auto-syncs OTel versions first)
+    cmds:
+      - task: :version:sync-otel-versions
+      - podman-compose -f compose.yaml up
+
+  undeploy:
+    desc: Undeploy container stack — DESTRUCTIVE
+    prompt: This will tear down the container stack. Are you sure?
+    cmd: podman-compose -f compose.yaml down -v

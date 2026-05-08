@@ -163,6 +163,9 @@ exporters:
       region: ${AWS_REGION}
       s3_bucket: ${S3_BUCKETNAME}
       s3_prefix: ${S3_OBJ_DIR}
+      endpoint: ${S3_ENDPOINT}
+      s3_force_path_style: true
+      disable_ssl: true
       unique_key_func_name: uuidv7
       s3_partition_format: ""
       file_prefix: "evidence_"

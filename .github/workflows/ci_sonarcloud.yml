@@ -17,8 +17,15 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run test
-        run: make test
+        run: task test
       - name: Merge coverage files
         run: |
           cat proofwatch/coverage.out > coverage.out

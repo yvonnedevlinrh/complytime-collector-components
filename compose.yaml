@@ -9,7 +9,7 @@ services:
     command: -config.file=/etc/loki/local-config.yaml
 
   grafana:
-    image: grafana/grafana:11.6.0
+    image: "docker.io/grafana/grafana:11.6.0"
     environment:
       - GF_FEATURE_TOGGLES_ENABLE=grafanaManagedRecordingRules
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
@@ -37,40 +37,63 @@ services:
         EOF
         /run.sh
 
-  compass:
-    # replace with local compass image when test, for example localhost/gemara-content-service:local
-    image: ghcr.io/complytime/gemara-content-service:latest
-    restart: unless-stopped
-    volumes:
-      # replace mount path with local gemara-content-service repo path
-      # - ./hack/sampledata:/hack/sampledata:Z
-      # - ./hack/demo/config.yaml:/config.yaml:Z
-      # Development/Testing purpose
-      - ./hack/self-signed-cert/compass.crt:/certs/compass.crt:Z
-      - ./hack/self-signed-cert/compass.key:/certs/compass.key:Z
-    command: ["--config", "/config.yaml", "--catalog", "/hack/sampledata/osps.yaml", "--port", "8081"]
+  rustfs:
+    image: "docker.io/rustfs/rustfs:latest"
+    environment:
+      - RUSTFS_ACCESS_KEY=${AWS_ACCESS_KEY_ID:-rustfsadmin}
+      - RUSTFS_SECRET_KEY=${AWS_SECRET_ACCESS_KEY:-rustfsadmin}
     ports:
-      - "8081:8081"
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - rustfs-data:/data
+      - rustfs-logs:/logs
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  rustfs-init:
+    image: "docker.io/rustfs/rc:latest"
+    depends_on:
+      - rustfs
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until rc alias set local http://rustfs:9000 $$AWS_ACCESS_KEY_ID $$AWS_SECRET_ACCESS_KEY 2>/dev/null; do
+          echo "waiting for rustfs..."
+          sleep 2
+        done
+        rc mb --ignore-existing local/$$S3_BUCKETNAME
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-rustfsadmin}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-rustfsadmin}
+      - S3_BUCKETNAME=${S3_BUCKETNAME:-complybeacon-evidence}
+    restart: "no"
 
   collector:
-    environment:
-      - AWS_REGION=${AWS_REGION}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - S3_BUCKETNAME=${S3_BUCKETNAME}
-      - S3_OBJ_DIR=${S3_OBJ_DIR}
     build:
       context: ./beacon-distro
       dockerfile: Containerfile.collector
+    depends_on:
+      - rustfs-init
+    environment:
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-rustfsadmin}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-rustfsadmin}
+      - S3_BUCKETNAME=${S3_BUCKETNAME:-complybeacon-evidence}
+      - S3_OBJ_DIR=${S3_OBJ_DIR:-evidence}
+      - S3_ENDPOINT=${S3_ENDPOINT:-http://rustfs:9000}
     restart: unless-stopped
     command: ["--config=/etc/otel-collector.yaml"]
     volumes:
       - ./hack/demo/demo-config.yaml:/etc/otel-collector.yaml:Z
       - ./data:/data:Z
-      # Development/Testing purpose
-      - ./hack/self-signed-cert/truthbeam.crt:/certs/truthbeam.crt:Z
     ports:
       - "4317:4317"
       - "8088:8088"
-    depends_on:
-      - compass
+
+volumes:
+  rustfs-data:
+  rustfs-logs:

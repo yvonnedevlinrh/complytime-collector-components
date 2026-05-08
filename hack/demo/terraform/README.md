@@ -197,7 +197,7 @@ terraform plan
 terraform apply
 ```
 
-The dashboard will be created at http://localhost:3000/d/compliance-evidence.
+The dashboard will be created at <http://localhost:3000/d/compliance-evidence>.
 
 ### 3. Making Changes
 
