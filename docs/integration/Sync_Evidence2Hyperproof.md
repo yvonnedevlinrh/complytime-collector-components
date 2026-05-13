@@ -36,18 +36,18 @@ Before configuring the automation, the following components and credentials must
 
 ### **3.1 Hyperproof Configuration**
 
-1.  **Provision API Credentials:** Create an API client within Hyperproof to allow external access.
+1. **Provision API Credentials:** Create an API client within Hyperproof to allow external access.
     * *Path:* `Administrator -> Setting -> API Client`
-2.  **Record Credentials:** Securely note the `CLIENT_ID` and `CLIENT_SECRET`.
+2. **Record Credentials:** Securely note the `CLIENT_ID` and `CLIENT_SECRET`.
 
 ### **3.2 AWS Infrastructure Setup**
 
 #### **A. IAM & [S3 Bucket](https://docs.aws.amazon.com/s3/?icmpid=docs_homepage_featuredsvcs) (Storage)**
 
-1.  Create S3 Bucket: Provision a new AWS S3 bucket for evidence ingestion. Note the Bucket Name.
-2.  [Create IAM Policy](https://docs.hyperproof.io/cm/en/integrations/hp-amazon-s3): Create an IAM Policy granting write access to this specific S3 bucket (for Complybeacon).
+1. Create S3 Bucket: Provision a new AWS S3 bucket for evidence ingestion. Note the Bucket Name.
+2. [Create IAM Policy](https://docs.hyperproof.io/cm/en/integrations/hp-amazon-s3): Create an IAM Policy granting write access to this specific S3 bucket (for Complybeacon).
 
-    _Example Policy snippet_
+    *Example Policy snippet*
     ```
         {
             "Version": "2012-10-17",
@@ -81,7 +81,7 @@ Before configuring the automation, the following components and credentials must
             ]
         }
     ```
-3.  [Create IAM User](https://docs.hyperproof.io/cm/en/integrations/hp-amazon-s3): Create an IAM User (for Complybeacon), attach the policy, and generate the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
+3. [Create IAM User](https://docs.hyperproof.io/cm/en/integrations/hp-amazon-s3): Create an IAM User (for Complybeacon), attach the policy, and generate the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
 
 #### **B. [Systems Manager](https://docs.aws.amazon.com/systems-manager/?icmpid=docs_homepage_mgmtgov) (Secrets Management)**
 
@@ -92,13 +92,13 @@ Create new **`SecureString`** parameters in the AWS Systems Manager (SSM) Parame
 
 #### **C. [Lambda Function](https://docs.aws.amazon.com/lambda/?icmpid=docs_homepage_featuredsvcs)**
 
-1.  **Create Function:** Initialise a new AWS Lambda function (using Python runtime).
-2.  **Configure Triggers:** Add an S3 trigger linking it to the bucket from step **3.2 A**, configured to fire ***only*** on `s3:ObjectCreated:Put` and `s3:ObjectCreated:Post` events(Very important).
-3.  **Configure IAM Execution Role:**
+1. **Create Function:** Initialise a new AWS Lambda function (using Python runtime).
+2. **Configure Triggers:** Add an S3 trigger linking it to the bucket from step **3.2 A**, configured to fire ***only*** on `s3:ObjectCreated:Put` and `s3:ObjectCreated:Post` events(Very important).
+3. **Configure IAM Execution Role:**
     * Attach the managed policy `AmazonS3ReadOnlyAccess` (to allow Lambda to read the evidence logs).
     * Create and attach an inline policy granting `ssm:GetParameter` and `kms:Decrypt` permission to read the specific SSM parameters (`/hyperproof/CLIENT_ID`, `/hyperproof/CLIENT_SECRET`).
 
-    _Example Policy snippet_
+    *Example Policy snippet*
     ```json
     {
       "Version": "2012-10-17",
@@ -138,19 +138,19 @@ Create new **`SecureString`** parameters in the AWS Systems Manager (SSM) Parame
     }
     ```
 
-4.  **Dependencies & Layers:** Create and attach a Lambda Layer containing the necessary Python libraries (`requests`).
-5.  **Set Environment Variables:** Configure the following (for the Python script to use):
+4. **Dependencies & Layers:** Create and attach a Lambda Layer containing the necessary Python libraries (`requests`).
+5. **Set Environment Variables:** Configure the following (for the Python script to use):
     * `CLIENT_ID`: `/hyperproof/CLIENT_ID`
     * `CLIENT_SECRET`: `/hyperproof/CLIENT_SECRET`
-6.  **Deploy Code:** Deploy the actual [sync code](https://gitlab.cee.redhat.com/product-security/continuous-compliance/SyncEvidence2Hyperproof/-/blob/main/lambda_function.py?ref_type=heads) (which reads S3, retrieves secrets from SSM, and calls the Hyperproof API) into the Lambda Function editor.
-7.  **Setup timeout** Go to Configuration->General configuration, increase timeout value to a bigger value, for example 10s(default is 3). 
+6. **Deploy Code:** Deploy the actual [sync code](https://gitlab.cee.redhat.com/product-security/continuous-compliance/SyncEvidence2Hyperproof/-/blob/main/lambda_function.py?ref_type=heads) (which reads S3, retrieves secrets from SSM, and calls the Hyperproof API) into the Lambda Function editor.
+7. **Setup timeout** Go to Configuration->General configuration, increase timeout value to a bigger value, for example 10s(default is 3).
 
 ---
 
 ## 4. Execution
 Once all prerequisites are complete, the pipeline is activated automatically:
 
-1.  The Complybeacon exports the evidence log.
-2.  The evidence log is written to the configured S3 bucket.
-3.  The S3 write event immediately triggers the Lambda function.
-4.  The Lambda function executes, pushing the evidence log to Hyperproof.
+1. The Complybeacon exports the evidence log.
+2. The evidence log is written to the configured S3 bucket.
+3. The S3 write event immediately triggers the Lambda function.
+4. The Lambda function executes, pushing the evidence log to Hyperproof.

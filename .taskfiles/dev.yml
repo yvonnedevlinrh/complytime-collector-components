@@ -1,0 +1,70 @@
+version: '3'
+
+vars:
+  # Task v3 does not inherit root vars in included files; keep in sync with Taskfile.yml.
+  MODULES: '{{.MODULES | default "./proofwatch ./truthbeam"}}'
+  TEST_DIR: '{{.TEST_DIR | default (printf "%s/.test-output" .ROOT_DIR)}}'
+
+tasks:
+  default:
+    silent: true
+    cmd: task dev --list
+
+  workspace:
+    desc: Setup a Go workspace with all modules
+    cmd: test -f go.work || go work init && go work use {{.MODULES}}
+
+  deps:
+    desc: Tidy, verify, and download deps for all modules (workspace-aware)
+    deps: [workspace]
+    cmds:
+      - echo "Syncing workspace..."
+      - go work sync
+      - bash {{.ROOT_DIR}}/.taskfiles/scripts/go-module-runner.sh deps
+
+  test:
+    desc: Run unit tests with coverage and version checks for all modules
+    cmds:
+      - task: :version:check-go-version
+      - task: :version:check-go-mod-consistency
+      - task: :version:check-otel-versions
+      - mkdir -p {{.TEST_DIR}}
+      - bash {{.ROOT_DIR}}/.taskfiles/scripts/go-module-runner.sh test
+
+  test-race:
+    desc: Run tests with race detection for all modules
+    cmds:
+      - bash {{.ROOT_DIR}}/.taskfiles/scripts/go-module-runner.sh test-race
+
+  coverage-report:
+    desc: Generate HTML coverage report and show summary
+    deps: [test]
+    cmds:
+      - bash {{.ROOT_DIR}}/.taskfiles/scripts/go-module-runner.sh coverage-report
+
+  lint:
+    desc: Run golangci-lint for all modules
+    cmds:
+      - bash {{.ROOT_DIR}}/.taskfiles/scripts/go-module-runner.sh lint
+
+  mega-lint:
+    desc: Run MegaLinter in a container (auto-detects docker/podman)
+    vars:
+      CONTAINER_RUNTIME:
+        sh: 'command -v podman >/dev/null 2>&1 && echo "podman" || echo "docker"'
+      APPLY_FIXES: '{{.APPLY_FIXES | default "none"}}'
+    cmds:
+      - >-
+        {{.CONTAINER_RUNTIME}} run --rm
+        --platform linux/amd64
+        -v {{.ROOT_DIR}}:/tmp/lint:rw,z
+        -e SHOW_ELAPSED_TIME=true
+        -e APPLY_FIXES={{.APPLY_FIXES}}
+        ghcr.io/oxsecurity/megalinter:v9
+
+  mega-lint-fix:
+    desc: Run MegaLinter with auto-fix enabled
+    cmds:
+      - task: mega-lint
+        vars:
+          APPLY_FIXES: "all"

@@ -1,0 +1,52 @@
+version: '3'
+
+vars:
+  # Task v3 does not inherit root vars in included files; keep in sync with Taskfile.yml.
+  MODULES: '{{.MODULES | default "./proofwatch ./truthbeam"}}'
+
+tasks:
+  default:
+    silent: true
+    cmd: task codegen --list
+
+  api-codegen:
+    desc: Run go generate for all modules
+    cmds:
+      - bash {{.ROOT_DIR}}/.taskfiles/scripts/go-module-runner.sh api-codegen
+
+  weaver-docsgen:
+    desc: Generate docs using weaver
+    cmd: weaver registry generate -r model --templates "https://github.com/open-telemetry/semantic-conventions/archive/refs/tags/v1.34.0.zip[templates]" markdown docs
+
+  weaver-codegen:
+    desc: Generate Go code using weaver
+    cmds:
+      - weaver registry generate -r model --templates templates go --param package_name="proofwatch" proofwatch
+      - weaver registry generate -r model --templates templates go --param package_name="applier" truthbeam/internal/applier
+
+  weaver-check:
+    desc: Model schema check
+    cmd: weaver registry check -r model
+
+  weaver-semantic-check:
+    desc: Validate logs against semantic conventions
+    cmds:
+      - echo "Generating test OCSF and Gemara logs..."
+      - cd proofwatch && go run -mod=readonly ./cmd/validate-logs both /tmp/test-enriched-logs.json
+      - echo "Validating with weaver live-check (development stability warnings suppressed)..."
+      - cmd: |
+          cat /tmp/test-enriched-logs.json | \
+            weaver registry live-check -r model --input-source stdin --input-format json 2>&1 | \
+            (grep -v "development.*Is not stable" || true)
+      - echo ""
+      - echo "---------------------------------------------------------------"
+      - echo "Note - Development stability warnings have been suppressed."
+      - echo "To see all advisories including development stability warnings, run task codegen:weaver-semantic-check-verbose"
+
+  weaver-semantic-check-verbose:
+    desc: Validate logs with verbose output
+    cmds:
+      - echo "Generating test OCSF and Gemara logs..."
+      - cd proofwatch && go run -mod=readonly ./cmd/validate-logs both /tmp/test-enriched-logs.json
+      - echo "Validating with weaver live-check (showing all advisories)..."
+      - cat /tmp/test-enriched-logs.json | weaver registry live-check -r model --input-source stdin --input-format json

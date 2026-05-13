@@ -4,7 +4,7 @@
 
 Proofwatch captures, normalizes, and emits formatted compliance-data logs using the OpenTelemetry format (OTLP).
 
-## Usage 
+## Usage
 
 Proofwatch is an OpenTelemetry instrumentation library that enable applications to log compliance evidence and policy evaluation events using OpenTelemetry's structured logging format.
 

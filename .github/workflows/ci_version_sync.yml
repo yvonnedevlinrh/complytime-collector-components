@@ -26,22 +26,28 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Check Go version alignment
-        run: make check-go-version
+        run: task version:check-go-version
 
       - name: Check OTel version alignment
-        run: make check-otel-versions
+        run: task version:check-otel-versions
 
       - name: Verify manifest can be synced
         run: |
           # Run sync in dry-run mode (save original first)
           cp beacon-distro/manifest.yaml /tmp/manifest.yaml.orig
-          make sync-otel-versions
+          task version:sync-otel-versions
 
           # Check if there are differences
           if ! diff -q beacon-distro/manifest.yaml /tmp/manifest.yaml.orig; then
             echo "ERROR: manifest.yaml is out of sync with truthbeam"
-            echo "Run 'make sync-otel-versions' locally and commit the changes"
+            echo "Run 'task version:sync-otel-versions' locally and commit the changes"
             exit 1
           fi
 

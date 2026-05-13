@@ -29,8 +29,15 @@ jobs:
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version: "${{ env.GO_VERSION }}"
+
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - id: setup-workspace
-        run: make workspace
+        run: task workspace
       - id: set-modules
         run: echo "modules=$(go list -m -json | jq -s '.' | jq -c '[.[].Dir]')" >> "${GITHUB_OUTPUT}"
 
@@ -59,8 +66,14 @@ jobs:
         with:
           go-version: "${{ env.GO_VERSION }}"
 
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run all tests
-        run: make test
+        run: task test
 
   weave-check:
     runs-on: ubuntu-latest
@@ -69,6 +82,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install weaver
         run: |
@@ -82,13 +101,13 @@ jobs:
           rm -rf "weaver-x86_64-unknown-linux-gnu/"
 
       - name: Setup Go workspace
-        run: make workspace
+        run: task workspace
 
       - name: Run weaver check
-        run: make weaver-check
+        run: task codegen:weaver-check
 
       - name: Generate test OCSF and Gemara logs and validate with weaver live-check
-        run: make weaver-semantic-check
+        run: task codegen:weaver-semantic-check
 
   verify-codegen:
     runs-on: ubuntu-latest
@@ -97,6 +116,12 @@ jobs:
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version: "${{ env.GO_VERSION }}"
+
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install weaver
         run: |
@@ -110,13 +135,13 @@ jobs:
           rm -rf weaver-x86_64-unknown-linux-gnu/
 
       - name: Install oapi-codegen
-        run: go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest
+        run: go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.0
 
       - name: Add Go bin to PATH
         run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Setup workspace
-        run: make workspace
+        run: task workspace
 
       - name: Install dependencies
         run: |
@@ -126,13 +151,13 @@ jobs:
 
       - name: Run code generation
         run: |
-          make api-codegen
-          make weaver-codegen
+          task codegen:api-codegen
+          task codegen:weaver-codegen
 
       - name: Check for diffs
         run: |
           if [ -n "$(git status --porcelain)" ]; then
-            echo "ERROR: Code generation produced diffs. Please run 'make api-codegen' and 'make weaver-codegen' and commit the changes."
+            echo "ERROR: Code generation produced diffs. Please run 'task codegen:api-codegen' and 'task codegen:weaver-codegen' and commit the changes."
             echo ""
             echo "Changes detected:"
             git status --porcelain

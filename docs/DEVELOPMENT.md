@@ -9,7 +9,7 @@ It complements the [DESIGN.md](./DESIGN.md) document by focusing on the practica
     * [Required Software](#required-software)
   * [Development Environment Setup](#development-environment-setup)
     * [1. Clone the Repository](#1-clone-the-repository)
-    * [2. Install podman-compose (if needed)](#2-install-podman-compose-if-needed)
+    * [2. Install Task (if needed)](#2-install-task-if-needed)
     * [3. Initialize Go Workspace](#3-initialize-go-workspace)
     * [4. Install Dependencies](#4-install-dependencies)
     * [5. Verify Installation](#5-verify-installation)
@@ -36,12 +36,11 @@ It complements the [DESIGN.md](./DESIGN.md) document by focusing on the practica
 
 ### Required Software
 
-- **Go 1.24+**: The project uses Go 1.24.0 with toolchain 1.24.5
-- **Podman**: For containerized development and deployment
-- **podman-compose**: For orchestrating multi-container development environments
-- **Make**: For build automation
+- **Go 1.25+**: The project uses Go 1.25.8 with toolchain 1.25.9
+- **Podman**: For containerized development and deployment (Docker is not supported)
+- **Task**: For build automation ([installation guide](https://taskfile.dev/installation/))
 - **Git**: For version control
-- **openssl** Cryptography toolkit 
+- **openssl**: Cryptography toolkit
 
 ## Development Environment Setup
 
@@ -52,19 +51,22 @@ git clone https://github.com/complytime/complybeacon.git
 cd complybeacon
 ```
 
-### 2. Install podman-compose (if needed)
+### 2. Install Task (if needed)
 
-The project uses `podman-compose` for container orchestration. Install it if you don't have it:
+The project uses [Task](https://taskfile.dev) for build automation. Install it if you don't have it:
 
 ```bash
-# Install podman-compose
-pip install podman-compose
+# macOS
+brew install go-task/tap/go-task
 
-# alternatively for Fedora:
-dnf install podman-compose
+# Linux
+sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b ~/.local/bin
+
+# Or using Go
+go install github.com/go-task/task/v3/cmd/task@latest
 
 # Verify installation
-podman-compose --version
+task --version
 ```
 
 ### 3. Initialize Go Workspace
@@ -72,7 +74,7 @@ podman-compose --version
 The project uses Go workspaces to manage multiple modules:
 
 ```bash
-make workspace
+task workspace
 ```
 
 This creates a `go.work` file that includes all project modules:
@@ -84,28 +86,31 @@ This creates a `go.work` file that includes all project modules:
 Dependencies are managed per module. Install them for all modules:
 
 ```bash
-# Install dependencies for all modules
-for module in proofwatch truthbeam; do
-    cd $module && go mod download && cd ..
-done
+task deps
 ```
+
+This automatically:
+- Syncs the Go workspace
+- Runs `go mod tidy` for each module
+- Verifies and downloads dependencies
 
 ### 5. Verify Installation
 
 ```bash
 # Run tests to verify everything works
-make test
+task test
 
-# Build all binaries
-make build
+# Run all quality gates (lint + test)
+task check
 ```
 
 ## Project Structure
 
 ```
 complybeacon/
-├── compose.yaml                # podman-compose configuration for demo environment
-├── Makefile                    # Build automation
+├── compose.yaml                # Container orchestration configuration
+├── Taskfile.yml                # Build automation
+├── .taskfiles/                 # Task modules and helper scripts
 ├── docs/                       # Documentation
 │   ├── DESIGN.md              # Architecture and design documentation
 │   ├── DEVELOPMENT.md         # This file
@@ -127,8 +132,7 @@ complybeacon/
 ├── hack/                       # Development utilities
 │   ├── demo/                  # Demo configurations
 │   ├── sampledata/            # Sample data for testing
-│   └── self-signed-cert/      # self signed cert, testing/development purpose
-└── bin/                        # Built binaries (created by make build)
+└── bin/                        # Built binaries (created by task infra:deploy)
 ```
 
 ## Testing
@@ -136,8 +140,14 @@ complybeacon/
 ### Running Tests
 
 ```bash
-# Run all tests
-make test
+# Run all tests (includes version checks and coverage)
+task test
+
+# Run tests with race detection
+task test-race
+
+# Generate coverage reports
+task dev:coverage-report
 
 # Run tests for specific module
 cd proofwatch && go test -v ./...
@@ -149,16 +159,24 @@ cd truthbeam && go test -v ./...
 The project includes integration tests using the demo environment:
 
 ```bash
-# Start the demo environment
-make deploy
+# Start the demo environment (builds images and starts services)
+task deploy
+
+# Or run in background
+podman-compose -f compose.yaml up -d
 
 # Test the pipeline
 curl -X POST http://localhost:8088/eventsource/receiver \
   -H "Content-Type: application/json" \
   -d @hack/sampledata/evidence.json
 
+# View logs
+podman-compose -f compose.yaml logs -f
+
+# Stop the environment
+task infra:undeploy
+
 # Check logs in Grafana at http://localhost:3000
-# Check Compass API at http://localhost:8081/v1/enrich
 ```
 
 ## Component Development
@@ -179,8 +197,9 @@ cd proofwatch
 # Run tests
 go test -v ./...
 
-# Check for linting issues
-go vet ./...
+# Run linting (from root)
+cd ..
+task lint
 
 # Format code
 go fmt ./...
@@ -188,9 +207,7 @@ go fmt ./...
 
 ### 2. Compass Development
 
-Compass is maintained as a separate project. See [gemara-content-service](https://github.com/complytime/gemara-content-service) for its source code, API specification, and contribution guidelines.
-
-In the ComplyBeacon demo stack, Compass runs as a pre-built container image (`ghcr.io/complytime/gemara-content-service:latest`) defined in `compose.yaml`.
+Compass is an external enrichment service that TruthBeam connects to for compliance lookups. It must be provided separately and is not included in the demo stack.
 
 ### 3. TruthBeam Development
 
@@ -241,15 +258,17 @@ The Beacon distribution is a custom OpenTelemetry Collector.
 
 **Development Workflow:**
 ```bash
-cd beacon-distro
-
 # Build the collector image
-podman build -f Containerfile.collector -t complybeacon-beacon-distro:latest .
+podman build -f beacon-distro/Containerfile.collector -t complybeacon-collector beacon-distro/
 
-# Test with local configuration
-podman run --rm -p 4317:4317 -p 8088:8088 \
-  -v $(pwd)/config.yaml:/etc/otel-collector.yaml:Z \
-  complybeacon-beacon-distro:latest
+# Or force rebuild without cache
+podman build --no-cache -f beacon-distro/Containerfile.collector -t complybeacon-collector beacon-distro/
+
+# Run locally for quick testing
+podman run --rm complybeacon-collector --config /etc/otelcol-beacon/config.yaml
+
+# Full stack deployment for integration testing
+task deploy
 ```
 
 ## Debugging and Troubleshooting
@@ -257,9 +276,16 @@ podman run --rm -p 4317:4317 -p 8088:8088 \
 ### Debugging Tools
 
 ```bash
-# View container logs
-podman-compose logs -f compass
-podman-compose logs -f collector
+# View all container logs
+podman-compose -f compose.yaml logs -f
+
+# View specific service logs
+podman-compose -f compose.yaml ps            # List running services
+podman-compose -f compose.yaml logs -f collector
+
+# Check container status
+podman images | grep complybeacon            # List built images
+podman inspect complybeacon-collector        # Inspect image details
 ```
 
 ## Code Generation
@@ -272,13 +298,16 @@ Generate documentation and Go code from semantic convention models:
 
 ```bash
 # Generate documentation
-make weaver-docsgen
+task codegen:weaver-docsgen
 
 # Generate Go code
-make weaver-codegen
+task codegen:weaver-codegen
 
 # Validate models
-make weaver-check
+task codegen:weaver-check
+
+# Validate logs against semantic conventions
+task codegen:weaver-semantic-check
 ```
 
 ### 2. Manual Code Generation
@@ -290,42 +319,45 @@ If you modify the semantic conventions:
 vim model/attributes.yaml
 vim model/entities.yaml
 
-# Regenerate semantic convention code
-make weaver-codegen
+# Regenerate all code (API + weaver)
+task codegen:api-codegen
+task codegen:weaver-codegen
 ```
 
 ## Deployment and Demo
 
 ### Local Development Demo
 
-The demo environment uses `podman-compose` to orchestrate multiple containers. Ensure you have `podman-compose` installed before proceeding.
+The demo environment orchestrates multiple containers (Grafana, Loki, Beacon Collector, Compass).
 
-1. **Generate self-signed certificate**
-
-Since compass and truthbeam enabled TLS by default, first we need to generate self-signed certificate for testing/development
-
-```shell
-make generate-self-signed-cert
-```
-
-2. **Start the full stack:**
+1. **Start the full stack:**
 ```bash
-make deploy
+# Interactive mode (shows logs in terminal)
+task infra:deploy
+
+# Or background/detached mode
+podman-compose -f compose.yaml up -d
 ```
 
-3. **Test the pipeline:**
+This automatically:
+- Syncs OTel versions from truthbeam to beacon-distro
+- Builds the beacon collector image
+- Starts all services (Grafana, Loki, Collector)
+
+2. **Test the pipeline:**
 ```bash
 curl -X POST http://localhost:8088/eventsource/receiver \
   -H "Content-Type: application/json" \
   -d @hack/sampledata/evidence.json
 ```
 
-4. **View results:**
-- Grafana: http://localhost:3000
+3. **View results:**
+- Grafana: <http://localhost:3000>
+- View logs: `podman-compose -f compose.yaml logs -f`
 
-5. **Stop the stack:**
+4. **Stop the stack:**
 ```bash
-make undeploy
+task infra:undeploy
 ```
 
 ---

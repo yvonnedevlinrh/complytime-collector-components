@@ -1,0 +1,76 @@
+version: '3'
+
+includes:
+  dev:
+    taskfile: .taskfiles/dev.yml
+  codegen:
+    taskfile: .taskfiles/codegen.yml
+  infra:
+    taskfile: .taskfiles/infra.yml
+  version:
+    taskfile: .taskfiles/version.yml
+  quality:
+    taskfile: .taskfiles/quality.yml
+
+vars:
+  APP_NAME: '{{.APP_NAME | default "complybeacon"}}'
+  TEST_DIR: '{{.TEST_DIR | default ".test-output"}}'
+  MODULES: './proofwatch ./truthbeam'
+  BIN_DIR: '{{.BIN_DIR | default "bin"}}'
+  CERT_DIR: '{{.CERT_DIR | default "hack/self-signed-cert"}}'
+
+tasks:
+  default:
+    silent: true
+    cmd: |
+      task --list
+
+  test:
+    desc: "Alias for dev:test"
+    cmds:
+      - task: dev:test
+
+  test-race:
+    desc: "Alias for dev:test-race"
+    cmds:
+      - task: dev:test-race
+
+  lint:
+    desc: "Alias for dev:lint"
+    cmds:
+      - task: dev:lint
+
+  mega-lint:
+    desc: "Alias for dev:mega-lint"
+    cmds:
+      - task: dev:mega-lint
+
+  mega-lint-fix:
+    desc: "Alias for dev:mega-lint-fix"
+    cmds:
+      - task: dev:mega-lint-fix
+
+  deps:
+    desc: "Alias for dev:deps"
+    cmds:
+      - task: dev:deps
+
+  workspace:
+    desc: "Alias for dev:workspace"
+    cmds:
+      - task: dev:workspace
+
+  build:
+    desc: "Alias for infra:build"
+    cmds:
+      - task: infra:build
+
+  check:
+    desc: Run all quality gates
+    deps: [lint, test]
+
+  clean:
+    desc: Remove build artifacts and test output
+    cmds:
+      - rm -rf {{.BIN_DIR}} {{.TEST_DIR}}
+      - GOFLAGS= go clean -modcache
