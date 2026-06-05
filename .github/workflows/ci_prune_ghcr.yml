@@ -55,5 +55,5 @@ jobs:
         with:
           package-name: complybeacon-beacon-distro
           package-type: container
-          min-versions-to-keep: 10
+          min-versions-to-keep: 100
           ignore-versions: "^v"
