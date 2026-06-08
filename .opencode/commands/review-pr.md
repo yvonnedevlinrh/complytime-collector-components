@@ -28,7 +28,7 @@ which gh
 ```
 
 If `gh` is not found: **STOP** with error:
-> "`gh` CLI is not installed. Install it from https://cli.github.com/ or via your package manager."
+> "`gh` CLI is not installed. Install it from <https://cli.github.com/> or via your package manager."
 
 If `gh` is found, verify authentication:
 
