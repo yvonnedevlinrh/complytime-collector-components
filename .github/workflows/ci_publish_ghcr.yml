@@ -5,6 +5,7 @@
 #
 # Pipeline Flow:
 #   build-beacon-distro → scan-image-beacon-distro → sign-beacon-distro → test-published-image
+#                                                                        └→ promote-unstable-quay (main only, best-effort)
 #
 # Invocation:
 #   - workflow_call: from ci_local.yml after all quality gates pass (push to main)
@@ -93,6 +94,31 @@ jobs:
       allow_unprotected_ref: true # Allow workflow_dispatch on non-default branches
     # NOTE: Outputs from the reusable workflow (image, digest, image_ref, tags)
     # are automatically available to downstream jobs via needs.build-beacon-distro.outputs.*
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # QUAY CREDENTIAL CHECK (for unstable promotion)
+  # ═══════════════════════════════════════════════════════════════════════════
+  check-quay-secrets:
+    name: Check Quay Credentials
+    runs-on: ubuntu-latest
+    permissions:
+      contents: none
+    outputs:
+      has_quay_creds: ${{ steps.check.outputs.has_quay_creds }}
+    steps:
+      - name: Detect Quay credentials
+        id: check
+        env:
+          HAS_USERNAME: ${{ secrets.QUAY_USERNAME != '' }}
+          HAS_PASSWORD: ${{ secrets.QUAY_PASSWORD != '' }}
+        run: |
+          if [[ "$HAS_USERNAME" == "true" && "$HAS_PASSWORD" == "true" ]]; then
+            echo "has_quay_creds=true" >> "$GITHUB_OUTPUT"
+            echo "Quay credentials available."
+          else
+            echo "has_quay_creds=false" >> "$GITHUB_OUTPUT"
+            echo "Quay credentials not configured — unstable promotion will be skipped."
+          fi
 
   # ═══════════════════════════════════════════════════════════════════════════
   # STAGE 2: POST-BUILD IMAGE SCANNING
@@ -198,6 +224,35 @@ jobs:
           task integration:test PROFILE=base
 
   # ═══════════════════════════════════════════════════════════════════════════
+  # STAGE 4b: PROMOTE TO QUAY (unstable tag for main branch builds)
+  # ═══════════════════════════════════════════════════════════════════════════
+  promote-unstable-quay:
+    name: Promote Unstable to Quay
+    needs: [build-beacon-distro, sign-beacon-distro, check-quay-secrets]
+    if: >-
+      always()
+      && needs.build-beacon-distro.result == 'success'
+      && needs.sign-beacon-distro.result == 'success'
+      && needs.check-quay-secrets.outputs.has_quay_creds == 'true'
+      && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    permissions:
+      packages: read
+    uses: complytime/org-infra/.github/workflows/resuable_publish_quay.yml@cfd981e757253218aefb37c91969c32827e5c4b1 # v0.2.1
+    with:
+      source_registry: ghcr.io
+      source_image: complytime/complybeacon-beacon-distro
+      source_tag: sha-${{ github.sha }}
+      dest_registry: quay.io
+      dest_image: complytime/beacon-collector
+      dest_tag: unstable
+      include_sha_tags: true
+      allowed_identity_regex: https://github.com/complytime/org-infra(/.*)?
+      fail_if_dest_exists: false
+    secrets:
+      dest_username: ${{ secrets.QUAY_USERNAME }}
+      dest_password: ${{ secrets.QUAY_PASSWORD }}
+
+  # ═══════════════════════════════════════════════════════════════════════════
   # STAGE 5: SUMMARY (provides unified status)
   # ═══════════════════════════════════════════════════════════════════════════
   summary:
@@ -208,6 +263,7 @@ jobs:
         scan-image-beacon-distro,
         sign-beacon-distro,
         test-published-image,
+        promote-unstable-quay,
       ]
     if: ${{ always() }}
     runs-on: ubuntu-latest
@@ -220,6 +276,7 @@ jobs:
           R_S2: ${{ needs.scan-image-beacon-distro.result }}
           R_G2: ${{ needs.sign-beacon-distro.result }}
           R_TEST: ${{ needs.test-published-image.result }}
+          R_QUAY: ${{ needs.promote-unstable-quay.result }}
         run: |
           icon() { case "$1" in success) echo "✅";; skipped) echo "⏭️";; *) echo "❌";; esac; }
 
@@ -235,6 +292,7 @@ jobs:
           | Image Scan | $(icon "$R_S2") |
           | Sign | $(icon "$R_G2") |
           | Integration Test | $(icon "$R_TEST") |
+          | Quay Unstable | $(icon "$R_QUAY") |
           EOF
 
             if [[ "$R_B2" == "skipped" ]]; then
@@ -255,6 +313,7 @@ jobs:
             # Catch-all: any required stage that genuinely failed (not an intentional
             # skip) must turn the summary red. Without this, a failed signing step or
             # image scan would fall through to the success block and report false green.
+            # Quay promotion is excluded — it is best-effort and should not block the pipeline.
             for stage_result in "$R_B2" "$R_S2" "$R_G2" "$R_TEST"; do
               if [[ "$stage_result" == "failure" || "$stage_result" == "cancelled" ]]; then
                 echo "❌ **A required pipeline stage failed (result: ${stage_result}). See the failed job above.**"
@@ -298,6 +357,14 @@ jobs:
           ### 📦 Published Images
           - **Tag**: \`${BUILD_TAG}\`
           EOF
+
+            if [[ "$R_QUAY" == "success" ]]; then
+              echo "- **Quay**: \`quay.io/complytime/beacon-collector:unstable\`"
+            elif [[ "$R_QUAY" == "skipped" ]]; then
+              echo "- **Quay**: skipped (not a main branch build or Quay credentials not configured)"
+            else
+              echo "- **Quay**: ⚠️ promotion failed (non-blocking)"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ═══════════════════════════════════════════════════════════════════════════

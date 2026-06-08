@@ -340,3 +340,4 @@ jobs:
     uses: ./.github/workflows/ci_publish_ghcr.yml
     with:
       trigger_source: "Local CI"
+    secrets: inherit
