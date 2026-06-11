@@ -152,7 +152,7 @@ jobs:
       dest_image: complytime/beacon-collector
       dest_tag: ${{ needs.setup.outputs.dest_tag }}
       additional_tags: latest
-      include_sha_tags: true
+      include_sha_tags: false
       allowed_identity_regex: https://github.com/complytime/org-infra(/.*)?
       fail_if_dest_exists: ${{ inputs.force != true }}
     secrets:
