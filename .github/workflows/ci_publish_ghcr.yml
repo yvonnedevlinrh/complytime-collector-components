@@ -247,7 +247,7 @@ jobs:
       dest_registry: quay.io
       dest_image: complytime/beacon-collector
       dest_tag: unstable
-      include_sha_tags: true
+      include_sha_tags: false
       allowed_identity_regex: https://github.com/complytime/org-infra(/.*)?
       fail_if_dest_exists: false
     secrets:
